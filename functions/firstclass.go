@@ -36,4 +36,5 @@ func main() {
 	}
 	successLogger := prefixer("SUCCESS")
 	successLogger("expected behaviour")
+	successLogger("111")
 }
