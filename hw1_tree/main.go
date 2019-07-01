@@ -34,25 +34,21 @@ func dirTree(out io.Writer, path string, printFiles bool) (err error) {
 	}
 	defer dir.Close()
 
-	objects = sortObjects(&objects)
+	objects = sortObjects(&objects, printFiles)
 	var tabSymbol, treeSymbol string //, firstSymbol string
 
-	//var i int
-	for i := 0; i < strings.Count(path, string(os.PathSeparator)); i++ {
+	//var j int
+	for j := 0; j < strings.Count(path, string(os.PathSeparator)); j++ {
 		tabSymbol += "│\t"
 	}
-	//if i != 0 { // and not last
-	//	firstSymbol = "│"
-	//}
-	//tabSymbol = firstSymbol + tabSymbol
-	//
 
 	for i, file := range objects {
 		if i == len(objects)-1 {
 			treeSymbol = "└───"
-			//if len(tabSymbol) > 1 {
-			//	tabSymbol = tabSymbol[1:]
-			//}
+			if len(tabSymbol) > 1 {
+				tabSymbol = strings.ReplaceAll(tabSymbol, "│", "")
+				//tabSymbol = strings.Replace(tabSymbol, "│", "", j+1)
+			}
 		} else {
 			treeSymbol = "├───"
 		}
@@ -71,14 +67,18 @@ func dirTree(out io.Writer, path string, printFiles bool) (err error) {
 	return nil
 }
 
-func sortObjects(objects *[]os.FileInfo) []os.FileInfo {
+func sortObjects(objects *[]os.FileInfo, printFiles bool) []os.FileInfo {
 	var newObjects []os.FileInfo
 	var names []string
 
 	for _, file := range *objects {
-		//if file.IsDir() {
-		names = append(names, file.Name())
-		//}
+		if printFiles {
+			names = append(names, file.Name())
+		} else {
+			if file.IsDir() {
+				names = append(names, file.Name())
+			}
+		}
 	}
 	sort.Strings(names)
 
