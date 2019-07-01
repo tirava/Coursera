@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strings"
 )
 
 func main() {
@@ -34,20 +35,38 @@ func dirTree(out io.Writer, path string, printFiles bool) (err error) {
 	defer dir.Close()
 
 	objects = sortObjects(&objects)
+	var tabSymbol, treeSymbol string //, firstSymbol string
 
-	for _, file := range objects {
+	//var i int
+	for i := 0; i < strings.Count(path, string(os.PathSeparator)); i++ {
+		tabSymbol += "│\t"
+	}
+	//if i != 0 { // and not last
+	//	firstSymbol = "│"
+	//}
+	//tabSymbol = firstSymbol + tabSymbol
+	//
+
+	for i, file := range objects {
+		if i == len(objects)-1 {
+			treeSymbol = "└───"
+			//if len(tabSymbol) > 1 {
+			//	tabSymbol = tabSymbol[1:]
+			//}
+		} else {
+			treeSymbol = "├───"
+		}
 		if file.IsDir() {
-			_, err = fmt.Fprintln(out, file.Name())
+			_, err = fmt.Fprintln(out, tabSymbol+treeSymbol+file.Name())
 			err = dirTree(out, path+string(os.PathSeparator)+file.Name(), printFiles)
 			if err != nil {
 				return err
 			}
 		} else {
 			if printFiles {
-				_, err = fmt.Fprintln(out, file.Name())
+				_, err = fmt.Fprintln(out, tabSymbol+treeSymbol+file.Name())
 			}
 		}
-
 	}
 	return nil
 }
@@ -57,7 +76,9 @@ func sortObjects(objects *[]os.FileInfo) []os.FileInfo {
 	var names []string
 
 	for _, file := range *objects {
+		//if file.IsDir() {
 		names = append(names, file.Name())
+		//}
 	}
 	sort.Strings(names)
 
