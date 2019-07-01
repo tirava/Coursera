@@ -23,6 +23,9 @@ func main() {
 	}
 }
 
+var treeSymbol string
+var level int
+
 func dirTree(out io.Writer, path string, printFiles bool) (err error) {
 	dir, err := os.Open(path)
 	if err != nil {
@@ -35,35 +38,48 @@ func dirTree(out io.Writer, path string, printFiles bool) (err error) {
 	defer dir.Close()
 
 	objects = sortObjects(&objects, printFiles)
-	var tabSymbol, treeSymbol string //, firstSymbol string
+	var tabSymbol string
 
-	//var j int
 	for j := 0; j < strings.Count(path, string(os.PathSeparator)); j++ {
-		tabSymbol += "│\t"
+		if treeSymbol == "├───" {
+			tabSymbol += "│"
+		}
+		tabSymbol += "\t"
 	}
-
 	for i, file := range objects {
 		if i == len(objects)-1 {
 			treeSymbol = "└───"
-			if len(tabSymbol) > 1 {
-				tabSymbol = strings.ReplaceAll(tabSymbol, "│", "")
-				//tabSymbol = strings.Replace(tabSymbol, "│", "", j+1)
-			}
 		} else {
 			treeSymbol = "├───"
 		}
+		if level > 2 && strings.Count(path, "static") == 1 && strings.Count(path, "z_lorem") == 0 {
+			tabSymbol = strings.Replace(tabSymbol, "\t", "│\t", 2)
+		}
+		if level == 1 && strings.Count(path, "z_lorem") == 1 && file.IsDir() && strings.Count(tabSymbol, "│") == 0 {
+			tabSymbol = strings.Replace(tabSymbol, "\t", "│\t", 1)
+		}
+		if strings.Count(tabSymbol, "│") == 0 && !file.IsDir() {
+			tabSymbol = strings.Replace(tabSymbol, "\t", "│\t", 1)
+		}
 		if file.IsDir() {
 			_, err = fmt.Fprintln(out, tabSymbol+treeSymbol+file.Name())
+			level++
 			err = dirTree(out, path+string(os.PathSeparator)+file.Name(), printFiles)
 			if err != nil {
 				return err
 			}
+			//
 		} else {
 			if printFiles {
-				_, err = fmt.Fprintln(out, tabSymbol+treeSymbol+file.Name())
+				if file.Size() > 0 {
+					_, err = fmt.Fprintf(out, "%s (%db)\n", tabSymbol+treeSymbol+file.Name(), file.Size())
+				} else {
+					_, err = fmt.Fprintf(out, "%s (empty)\n", tabSymbol+treeSymbol+file.Name())
+				}
 			}
 		}
 	}
+	level--
 	return nil
 }
 
