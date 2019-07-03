@@ -5,7 +5,7 @@ import (
 )
 
 func main() {
-	in := make(chan int, 0)
+	in := make(chan int, 1)
 
 	go func(out chan<- int) {
 		for i := 0; i <= 10; i++ {
