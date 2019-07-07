@@ -39,15 +39,25 @@ func crc32Worker(data string, out chan string) {
 }
 
 func SingleHash(in, out chan interface{}) {
-	//ch := make(chan string)
+	ch := make(chan string)
+	ch5 := make(chan string)
+	i := len(in)
 	for data := range in {
 		d := strconv.Itoa(data.(int))
-		s := DataSignerCrc32(d) + "~" + DataSignerCrc32(DataSignerMd5(d))
-		//go crc32Worker(d, ch)
-		//s := DataSignerCrc32(<-ch) + "~" + DataSignerCrc32(DataSignerMd5(d))
-		fmt.Println(data, s)
-		out <- s
+		//s := DataSignerCrc32(d) + "~" + DataSignerCrc32(DataSignerMd5(d))
+		go crc32Worker(d, ch)
+		go crc32Worker(DataSignerMd5(d), ch5)
+		//s := <-ch + "~" + <-ch5
+		//fmt.Println(data, s)
+		//out <- s
 	}
+	for j := 0; j < i; j++ {
+		s := <-ch + "~" + <-ch5
+		fmt.Println(s)
+		out <- s
+		//println("out:", s)
+	}
+	//println("------------------------")
 }
 
 func MultiHash(in, out chan interface{}) {
@@ -66,11 +76,14 @@ func MultiHash(in, out chan interface{}) {
 		}
 		fmt.Println(data, s)
 		out <- s
+		//println("out:", s)
 	}
+	//println("------------------------")
 }
 
 func CombineResults(in, out chan interface{}) {
 	slice := make([]string, 0)
+	//println("lenRes:", len(in))
 	for data := range in {
 		slice = append(slice, data.(string))
 	}
