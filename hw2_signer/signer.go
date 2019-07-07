@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,22 +34,37 @@ func ExecutePipeline(jobs ...job) {
 	wg.Wait()
 }
 
+func crc32Worker(data string, out chan string) {
+	out <- DataSignerCrc32(data)
+}
+
 func SingleHash(in, out chan interface{}) {
+	//ch := make(chan string)
 	for data := range in {
 		d := strconv.Itoa(data.(int))
 		s := DataSignerCrc32(d) + "~" + DataSignerCrc32(DataSignerMd5(d))
-		//fmt.Println(data, s)
+		//go crc32Worker(d, ch)
+		//s := DataSignerCrc32(<-ch) + "~" + DataSignerCrc32(DataSignerMd5(d))
+		fmt.Println(data, s)
 		out <- s
 	}
 }
 
 func MultiHash(in, out chan interface{}) {
+	mch := make(map[int]chan string, MaxInputDataLen)
+	//ch := make(chan string)
 	for data := range in {
 		s := ""
 		for i := 0; i < 6; i++ {
-			s += DataSignerCrc32(strconv.Itoa(i) + data.(string))
+			mch[i] = make(chan string)
+			go crc32Worker(strconv.Itoa(i)+data.(string), mch[i])
+			//s += <-ch
+			//s += DataSignerCrc32(strconv.Itoa(i) + data.(string))
 		}
-		//fmt.Println(data, s)
+		for i := 0; i < 6; i++ {
+			s += <-mch[i]
+		}
+		fmt.Println(data, s)
 		out <- s
 	}
 }
@@ -57,8 +73,9 @@ func CombineResults(in, out chan interface{}) {
 	slice := make([]string, 0)
 	for data := range in {
 		slice = append(slice, data.(string))
-
 	}
 	sort.Strings(slice)
-	out <- strings.Join(slice, "_")
+	result := strings.Join(slice, "_")
+	fmt.Println(result)
+	out <- result
 }
