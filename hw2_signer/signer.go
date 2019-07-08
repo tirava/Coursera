@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"runtime"
 	"sort"
 	"strconv"
@@ -28,7 +27,7 @@ func (m *md5CallUnique) md5Calc(data string) (md5Result string) {
 
 		md5Result = DataSignerMd5(data)
 
-		fmt.Printf("%v SingleHash md5(data) %v\n", data, md5Result)
+		//fmt.Printf("%v SingleHash md5(data) %v\n", data, md5Result)
 		m.isBusy = false
 		m.Mutex.Unlock()
 
@@ -42,7 +41,7 @@ func (s *singleHash) cr32Calc(input string) {
 	defer s.Waiter.Done()
 
 	cr32Result := DataSignerCrc32(input)
-	fmt.Printf("%v SingleHash crc32(data) %v\n", input, cr32Result)
+	//fmt.Printf("%v SingleHash crc32(data) %v\n", input, cr32Result)
 	s.Mutex.Lock()
 	s.cr32Result = cr32Result
 	s.Mutex.Unlock()
@@ -77,7 +76,7 @@ func (s *singleHash) singleHashResultsContat(out chan interface{}, wg *sync.Wait
 
 	s.Waiter.Wait()
 	result := s.cr32Result + "~" + s.cr32Md5Result
-	fmt.Printf("%v SingleHash result %v \n\n", inputData, result)
+	//fmt.Printf("%v SingleHash result %v \n\n", inputData, result)
 
 	out <- result
 	wg.Done()
@@ -90,7 +89,7 @@ func singleHashCalc(data string, out chan interface{}, md5Uniq *md5CallUnique, w
 
 	singleHashCalculations := new(singleHash)
 
-	fmt.Printf("%v SingleHash data %v \n", data, data)
+	//fmt.Printf("%v SingleHash data %v \n", data, data)
 	singleHashCalculations.Waiter.Add(1)
 	go singleHashCalculations.cr32Calc(data)
 
@@ -171,7 +170,7 @@ func (m *multiHash) multiHashcalc(input interface{}, out chan interface{}) {
 	}
 	m.Unlock()
 
-	fmt.Printf("%s MultiHash result: %s \n\n", singleHashData, multiHashRes)
+	//fmt.Printf("%s MultiHash result: %s \n\n", singleHashData, multiHashRes)
 
 	out <- multiHashRes
 
@@ -180,7 +179,7 @@ func (m *multiHash) multiHashcalc(input interface{}, out chan interface{}) {
 func (m *multiHash) cr32Calc(step int, waiter *sync.WaitGroup, shData string) {
 	defer waiter.Done()
 	multiHashStep := DataSignerCrc32(strconv.Itoa(step) + shData)
-	fmt.Printf("%v MultiHash: crc32(th+step1)) %v %v\n", shData, step, multiHashStep)
+	//fmt.Printf("%v MultiHash: crc32(th+step1)) %v %v\n", shData, step, multiHashStep)
 	m.Lock()
 	m.multiHashes[step] = multiHashStep
 	m.Unlock()
@@ -202,7 +201,7 @@ func MultiHash(in chan interface{}, out chan interface{}) {
 	}
 	multiHashCalculations.Wait()
 
-	fmt.Printf("\n")
+	//fmt.Printf("\n")
 
 }
 
@@ -241,7 +240,7 @@ func CombineResults(in chan interface{}, out chan interface{}) {
 		}
 
 	}
-	fmt.Printf("CombineResults %s \n\n", result)
+	//fmt.Printf("CombineResults %s \n\n", result)
 	out <- result
 
 }
