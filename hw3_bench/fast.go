@@ -25,6 +25,8 @@ func FastSearch(out io.Writer) {
 	}
 
 	r := regexp.MustCompile("@")
+	rAndroid := regexp.MustCompile("Android")
+	rMSIE := regexp.MustCompile("MSIE")
 	seenBrowsers := []string{}
 	uniqueBrowsers := 0
 	foundUsers := ""
@@ -59,7 +61,8 @@ func FastSearch(out io.Writer) {
 				// log.Println("cant cast browser to string")
 				continue
 			}
-			if ok, err := regexp.MatchString("Android", browser); ok && err == nil {
+			if rAndroid.MatchString(browser) {
+				//if ok, err := regexp.MatchString("Android", browser); ok && err == nil {
 				isAndroid = true
 				notSeenBefore := true
 				for _, item := range seenBrowsers {
@@ -81,7 +84,8 @@ func FastSearch(out io.Writer) {
 				// log.Println("cant cast browser to string")
 				continue
 			}
-			if ok, err := regexp.MatchString("MSIE", browser); ok && err == nil {
+			if rMSIE.MatchString(browser) {
+				//if ok, err := regexp.MatchString("MSIE", browser); ok && err == nil {
 				isMSIE = true
 				notSeenBefore := true
 				for _, item := range seenBrowsers {
