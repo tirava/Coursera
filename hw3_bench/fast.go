@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strings"
@@ -14,30 +14,37 @@ import (
 
 // вам надо написать более быструю оптимальную этой функции
 func FastSearch(out io.Writer) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		panic(err)
-	}
-
-	fileContents, err := ioutil.ReadAll(file)
-	if err != nil {
-		panic(err)
-	}
 
 	r := regexp.MustCompile("@")
-	rAndroid := regexp.MustCompile("Android")
-	rMSIE := regexp.MustCompile("MSIE")
+	//rAndroid := regexp.MustCompile("Android")
+	//rMSIE := regexp.MustCompile("MSIE")
 	seenBrowsers := []string{}
 	uniqueBrowsers := 0
 	foundUsers := ""
 
-	lines := strings.Split(string(fileContents), "\n")
-
 	users := make([]map[string]interface{}, 0)
-	for _, line := range lines {
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	//fileContents, err := ioutil.ReadAll(file)
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	//lines := strings.Split(string(fileContents), "\n")
+	//for _, line := range lines {
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+
 		user := make(map[string]interface{})
-		// fmt.Printf("%v %v\n", err, line)
-		err := json.Unmarshal([]byte(line), &user)
+		//fmt.Printf("%v %v\n", err, line)
+		err = json.Unmarshal([]byte(line), &user)
 		if err != nil {
 			panic(err)
 		}
@@ -61,7 +68,8 @@ func FastSearch(out io.Writer) {
 				// log.Println("cant cast browser to string")
 				continue
 			}
-			if rAndroid.MatchString(browser) {
+			if strings.Contains(browser, "Android") {
+				//if rAndroid.MatchString(browser) {
 				//if ok, err := regexp.MatchString("Android", browser); ok && err == nil {
 				isAndroid = true
 				notSeenBefore := true
@@ -84,7 +92,8 @@ func FastSearch(out io.Writer) {
 				// log.Println("cant cast browser to string")
 				continue
 			}
-			if rMSIE.MatchString(browser) {
+			if strings.Contains(browser, "MSIE") {
+				//if rMSIE.MatchString(browser) {
 				//if ok, err := regexp.MatchString("MSIE", browser); ok && err == nil {
 				isMSIE = true
 				notSeenBefore := true
@@ -110,8 +119,12 @@ func FastSearch(out io.Writer) {
 		foundUsers += fmt.Sprintf("[%d] %s <%s>\n", i, user["name"], email)
 	}
 
-	fmt.Fprintln(out, "found users:\n"+foundUsers)
-	fmt.Fprintln(out, "Total unique browsers", len(seenBrowsers))
+	_, _ = fmt.Fprintln(out, "found users:\n"+foundUsers)
+	_, _ = fmt.Fprintln(out, "Total unique browsers", len(seenBrowsers))
 
 	//fmt.Println(out)
 }
+
+//func parseUser(user map[string]interface{})  {
+//
+//}
