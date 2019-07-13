@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+// !!!!!!!!!!!!!!!!!!!!!!!!!! uncomment?
 //const filePath string = "./data/users.txt"
 
 type User struct {
@@ -46,68 +47,32 @@ func FastSearch(out io.Writer) {
 
 	scanner := bufio.NewScanner(file)
 	i := -1
+	user := new(User)
+	var line []byte
 	for scanner.Scan() {
-		line := scanner.Text()
+		line = scanner.Bytes()
 		i++
 
-		//user := make(map[string]interface{}, 1)
-		//fmt.Printf("%v %v\n", err, line)
-		user := new(User)
-		err = json.Unmarshal([]byte(line), &user)
+		//user := new(User)
+		//err = json.Unmarshal([]byte(line), &user)
+		err = json.Unmarshal(line, &user)
 		if err != nil {
 			panic(err)
 		}
-		//fmt.Println(user)
-		//	users = append(users, user)
-		//}
-		//
-		//for i, user := range users {
 
 		isAndroid := false
 		isMSIE := false
 
-		//browsers, ok := user["browsers"].([]interface{})
-		//if !ok {
-		//	// log.Println("cant cast browsers")
-		//	continue
-		//}
-
-		//for _, browserRaw := range browsers {
 		for _, browser := range user.Browsers {
-			//browser, ok := browserRaw.(string)
-			//if !ok {
-			//	// log.Println("cant cast browser to string")
-			//	continue
-			//}
-			if strings.Contains(browser, "Android") {
-				//if rAndroid.MatchString(browser) {
-				//if ok, err := regexp.MatchString("Android", browser); ok && err == nil {
+			android := strings.Contains(browser, "Android")
+			msie := strings.Contains(browser, "MSIE")
+			if android {
 				isAndroid = true
-				notSeenBefore := true
-				for _, item := range seenBrowsers {
-					if item == browser {
-						notSeenBefore = false
-					}
-				}
-				if notSeenBefore {
-					// log.Printf("SLOW New browser: %s, first seen: %s", browser, user["name"])
-					seenBrowsers = append(seenBrowsers, browser)
-					uniqueBrowsers++
-				}
 			}
-		}
-
-		//for _, browserRaw := range browsers {
-		for _, browser := range user.Browsers {
-			//browser, ok := browserRaw.(string)
-			//if !ok {
-			//	// log.Println("cant cast browser to string")
-			//	continue
-			//}
-			if strings.Contains(browser, "MSIE") {
-				//if rMSIE.MatchString(browser) {
-				//if ok, err := regexp.MatchString("MSIE", browser); ok && err == nil {
+			if msie {
 				isMSIE = true
+			}
+			if android || msie {
 				notSeenBefore := true
 				for _, item := range seenBrowsers {
 					if item == browser {
@@ -126,19 +91,11 @@ func FastSearch(out io.Writer) {
 			continue
 		}
 
-		// log.Println("Android and MSIE user:", user["name"], user["email"])
-		//email := r.ReplaceAllString(user["email"].(string), " [at] ")
 		email := r.ReplaceAllString(user.Email, " [at] ")
-		//foundUsers += fmt.Sprintf("[%d] %s <%s>\n", i, user["name"], email)
 		foundUsers += fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, email)
 	}
 
 	_, _ = fmt.Fprintln(out, "found users:\n"+foundUsers)
 	_, _ = fmt.Fprintln(out, "Total unique browsers", len(seenBrowsers))
 
-	//fmt.Println(out)
 }
-
-//func parseUser(user map[string]interface{})  {
-//
-//}
