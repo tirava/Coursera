@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 )
 
@@ -22,11 +21,13 @@ type User struct {
 // вам надо написать более быструю оптимальную этой функции
 func FastSearch(out io.Writer) {
 
-	r := regexp.MustCompile("@")
+	//r := regexp.MustCompile("@")
 	//rAndroid := regexp.MustCompile("Android")
 	//rMSIE := regexp.MustCompile("MSIE")
-	seenBrowsers := []string{}
-	uniqueBrowsers := 0
+	//seenBrowsers := []string{}
+	//seenBrowsers := make([]string, 0, 256)
+	//uniqueBrowsers := 0
+	seenBrowsers := make(map[string]bool)
 	foundUsers := ""
 
 	//users := make([]map[string]interface{}, 0)
@@ -37,24 +38,15 @@ func FastSearch(out io.Writer) {
 	}
 	defer file.Close()
 
-	//fileContents, err := ioutil.ReadAll(file)
-	//if err != nil {
-	//	panic(err)
-	//}
-
-	//lines := strings.Split(string(fileContents), "\n")
-	//for _, line := range lines {
-
-	scanner := bufio.NewScanner(file)
 	i := -1
 	user := new(User)
 	var line []byte
+	scanner := bufio.NewScanner(file)
+
 	for scanner.Scan() {
 		line = scanner.Bytes()
 		i++
 
-		//user := new(User)
-		//err = json.Unmarshal([]byte(line), &user)
 		err = json.Unmarshal(line, &user)
 		if err != nil {
 			panic(err)
@@ -73,17 +65,20 @@ func FastSearch(out io.Writer) {
 				isMSIE = true
 			}
 			if android || msie {
-				notSeenBefore := true
-				for _, item := range seenBrowsers {
-					if item == browser {
-						notSeenBefore = false
-					}
+				//notSeenBefore := true
+				if _, ok := seenBrowsers[browser]; !ok {
+					seenBrowsers[browser] = true
 				}
-				if notSeenBefore {
-					// log.Printf("SLOW New browser: %s, first seen: %s", browser, user["name"])
-					seenBrowsers = append(seenBrowsers, browser)
-					uniqueBrowsers++
-				}
+				//for _, item := range seenBrowsers {
+				//	if item == browser {
+				//		notSeenBefore = false
+				//	}
+				//}
+				//if notSeenBefore {
+				//	// log.Printf("SLOW New browser: %s, first seen: %s", browser, user["name"])
+				//	seenBrowsers = append(seenBrowsers, browser)
+				//	uniqueBrowsers++
+				//}
 			}
 		}
 
@@ -91,7 +86,8 @@ func FastSearch(out io.Writer) {
 			continue
 		}
 
-		email := r.ReplaceAllString(user.Email, " [at] ")
+		//email := r.ReplaceAllString(user.Email, " [at] ")
+		email := strings.Replace(user.Email, "@", " [at] ", 1)
 		foundUsers += fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, email)
 	}
 
