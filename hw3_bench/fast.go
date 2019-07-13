@@ -71,16 +71,11 @@ func FastSearch(out io.Writer) {
 		}
 
 		email := strings.Replace(user.Email, "@", " [at] ", 1)
-		//foundUsers += fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, email)
 		fu = fmt.Sprintf("[%d] %s <%s>\n", i, user.Name, email)
 		foundUsers = append(foundUsers, fu)
 	}
 
-	fu = ""
-	for _, uf := range foundUsers {
-		fu += uf
-	}
-	//_, _ = fmt.Fprintln(out, "found users:\n"+foundUsers)
+	fu = strings.Join(foundUsers, "")
 	_, _ = fmt.Fprintln(out, "found users:\n"+fu)
 	_, _ = fmt.Fprintln(out, "Total unique browsers", len(seenBrowsers))
 
@@ -92,11 +87,6 @@ func (v *User) UnmarshalJSON(data []byte) error {
 	easyjson3486653aDecodeCourseraHw3Bench(&r, v)
 	return r.Error()
 }
-
-//// UnmarshalEasyJSON supports easyjson.Unmarshaler interface
-//func (v *User) UnmarshalEasyJSON(l *jlexer.Lexer) {
-//	easyjson3486653aDecodeCourseraHw3Bench(l, v)
-//}
 
 func easyjson3486653aDecodeCourseraHw3Bench(in *jlexer.Lexer, out *User) {
 	isTopLevel := in.IsStart()
