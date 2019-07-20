@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 )
 
 type UserData struct {
@@ -68,7 +69,6 @@ func SearchServer(w http.ResponseWriter, r *http.Request) {
 		if limit > 25 {
 			limit = 1
 		}
-		//println("lim in server:", limit)
 
 		// make body
 		body, err := json.Marshal(users.Users[:limit])
@@ -76,95 +76,64 @@ func SearchServer(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("error marshal xml data to json: %v", err)
 			return
 		}
-
-		// write body
 		w.Write(body)
+	case "time":
+		time.Sleep(time.Second * 3)
+	}
+}
 
-		//fmt.Println(string(body))
+func TestBadClient(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(SearchServer))
+
+	sc := &SearchClient{
+		"qqq",
+		"",
 	}
 
-	//fmt.Println(r.URL.Query())
+	_, err := sc.FindUsers(SearchRequest{25, 1, "ok", "name", 0})
+	if err != nil {
+		//t.Errorf("klim error: %#v", err)
+	}
+
+	ts.Close()
 }
+
+//func TestTimeOutClient(t *testing.T) {
+//	ts := httptest.NewServer(http.HandlerFunc(SearchServer))
+//
+//	sc := &SearchClient{
+//		"qqq",
+//		ts.URL,
+//	}
+//
+//	_, err := sc.FindUsers(SearchRequest{25, 1, "ok", "name", 0})
+//	if err != nil {
+//		//t.Errorf("klim error: %#v", err)
+//	}
+//
+//	ts.Close()
+//}
 
 func TestSearchClient(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(SearchServer))
 
 	sc := &SearchClient{
-		"111",
+		"555",
 		ts.URL,
 	}
 
 	srs := []SearchRequest{
-		{
-			-1,
-			1,
-			"555",
-			"name",
-			0,
-		},
-		{
-			35,
-			1,
-			"StatusInternalServerError",
-			"name",
-			0,
-		},
-		{
-			1,
-			-1,
-			"555",
-			"name",
-			0,
-		},
-		{
-			5,
-			1,
-			"StatusBadRequest",
-			"name",
-			0,
-		},
-		{
-			5,
-			1,
-			"StatusBadRequest",
-			"name1",
-			0,
-		},
-		{
-			5,
-			1,
-			"StatusBadRequest",
-			"nameX",
-			0,
-		},
-		{
-			5,
-			1,
-			"StatusUnauthorized",
-			"name",
-			0,
-		},
-		{
-			3,
-			1,
-			"badUsers",
-			"name",
-			0,
-		},
-		{
-			6,
-			1,
-			"ok",
-			"name",
-			0,
-		},
-		{
-			25,
-			1,
-			"ok",
-			"name",
-			0,
-		},
+		{-1, 1, "555", "name", 0},
+		{35, 1, "StatusInternalServerError", "name", 0},
+		{1, -1, "555", "name", 0},
+		{5, 1, "StatusBadRequest", "name", 0},
+		{5, 1, "StatusBadRequest", "name1", 0},
+		{5, 1, "StatusBadRequest", "nameX", 0},
+		{5, 1, "StatusUnauthorized", "name", 0},
+		{3, 1, "badUsers", "name", 0},
+		{6, 1, "ok", "name", 0},
+		{25, 1, "ok", "name", 0},
+		{25, 1, "time", "name", 0},
 	}
 
 	for _, sr := range srs {
@@ -173,8 +142,6 @@ func TestSearchClient(t *testing.T) {
 		if err != nil {
 			//t.Errorf("klim error: %#v", err)
 		}
-
-		//fmt.Println(result)
 	}
 
 	ts.Close()
