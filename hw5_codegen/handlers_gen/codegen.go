@@ -15,6 +15,7 @@ func main() {
 		log.Fatal(err)
 	}
 	out, _ := os.Create(os.Args[2])
+	defer out.Close()
 
 	fmt.Fprintln(out, `package `+node.Name.Name)
 	fmt.Fprintln(out) // empty line
