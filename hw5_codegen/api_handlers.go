@@ -10,14 +10,15 @@ import (
 )
 
 type response struct {
-	Err      string      `json:"error"`
+	Error    string      `json:"error"`
 	Response interface{} `json:"response"`
 }
 
 func Error(w http.ResponseWriter, err error, code int) {
 	http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), code)
 }
-func postMethodMiddleware(next http.Handler) http.Handler {
+
+func postMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, `{"error":"bad method"}`, http.StatusNotAcceptable)
@@ -26,6 +27,7 @@ func postMethodMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("X-Auth")
@@ -41,20 +43,20 @@ func (srv *MyApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch path {
 	case "/user/profile":
-		handler := http.Handler(http.HandlerFunc(srv.HandlerProfile))
+		handler := http.Handler(http.HandlerFunc(srv.handlerProfile))
 
 		handler.ServeHTTP(w, r)
 	case "/user/create":
-		handler := http.Handler(http.HandlerFunc(srv.HandlerCreate))
+		handler := http.Handler(http.HandlerFunc(srv.handlerCreate))
 		handler = authMiddleware(handler)
-		handler = postMethodMiddleware(handler)
+		handler = postMiddleware(handler)
 		handler.ServeHTTP(w, r)
 	default:
 		http.Error(w, `{"error":"unknown method"}`, http.StatusNotFound)
 	}
 }
 
-func (srv *MyApi) HandlerProfile(w http.ResponseWriter, r *http.Request) {
+func (srv *MyApi) handlerProfile(w http.ResponseWriter, r *http.Request) {
 	params, err := parseProfileParams(r)
 	if err != nil {
 		Error(w, err, http.StatusBadRequest)
@@ -100,7 +102,7 @@ func parseProfileParams(r *http.Request) (*ProfileParams, error) {
 	return params, nil
 }
 
-func (srv *MyApi) HandlerCreate(w http.ResponseWriter, r *http.Request) {
+func (srv *MyApi) handlerCreate(w http.ResponseWriter, r *http.Request) {
 	params, err := parseCreateParams(r)
 	if err != nil {
 		Error(w, err, http.StatusBadRequest)
@@ -182,16 +184,16 @@ func (srv *OtherApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch path {
 	case "/user/create":
-		handler := http.Handler(http.HandlerFunc(srv.HandlerCreate))
+		handler := http.Handler(http.HandlerFunc(srv.handlerCreate))
 		handler = authMiddleware(handler)
-		handler = postMethodMiddleware(handler)
+		handler = postMiddleware(handler)
 		handler.ServeHTTP(w, r)
 	default:
 		http.Error(w, `{"error":"unknown method"}`, http.StatusNotFound)
 	}
 }
 
-func (srv *OtherApi) HandlerCreate(w http.ResponseWriter, r *http.Request) {
+func (srv *OtherApi) handlerCreate(w http.ResponseWriter, r *http.Request) {
 	params, err := parseOtherCreateParams(r)
 	if err != nil {
 		Error(w, err, http.StatusBadRequest)

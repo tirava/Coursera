@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	headTmpl = template.Must(template.New(`headTmpl`).Parse(
+	commonTmpl = template.Must(template.New(`commonTmpl`).Parse(
 		`package {{.Package}}
 import (
 	"encoding/json"
@@ -25,13 +25,15 @@ import (
 	"strconv"
 )
 type response struct {
-	Err      string      ` + "`" + `json:"error"` + "`" + `
-	Response interface{} ` + "`" + `json:"response"` + "`" + `
+	Error      string      ` + "`" + `json:"error"` + "`" + `
+	Response   interface{} ` + "`" + `json:"response"` + "`" + `
 }
+
 func Error(w http.ResponseWriter, err error, code int) {
 	http.Error(w, fmt.Sprintf(` + "`" + `{"error":"%s"}` + "`" + `, err.Error()), code)
 }
-func postMethodMiddleware(next http.Handler) http.Handler {
+
+func postMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, ` + "`" + `{"error":"bad method"}` + "`" + `, http.StatusNotAcceptable)
@@ -40,6 +42,7 @@ func postMethodMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("X-Auth")
@@ -52,14 +55,14 @@ func authMiddleware(next http.Handler) http.Handler {
 }
 `))
 
-	ServeHTTPTmpl = template.Must(template.New(`serveHTTP`).Parse(`
+	serveHTTPTmpl = template.Must(template.New(`serveHTTPTmpl`).Parse(`
 func (srv *{{.ApiName}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch path { {{range .Methods}}
 	case "{{.Url}}":
-		handler := http.Handler(http.HandlerFunc(srv.Handler{{.Name}}))
+		handler := http.Handler(http.HandlerFunc(srv.handler{{.Name}}))
 {{if .Auth}}		handler = authMiddleware(handler){{end}}
-{{if eq .Method "POST"}}		handler = postMethodMiddleware(handler){{end}}
+{{if eq .Method "POST"}}		handler = postMiddleware(handler){{end}}
 		handler.ServeHTTP(w, r){{end}}
 	default:
 		http.Error(w, ` + "`" + `{"error":"unknown method"}` + "`" + `, http.StatusNotFound)
@@ -67,8 +70,8 @@ func (srv *{{.ApiName}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 `))
 
-	Handler = template.Must(template.New(`Handler`).Parse(`
-func (srv *{{.Api}}) Handler{{.Name}}(w http.ResponseWriter, r *http.Request) {
+	handlerTmpl = template.Must(template.New(`handlerTmpl`).Parse(`
+func (srv *{{.Api}}) handler{{.Name}}(w http.ResponseWriter, r *http.Request) {
 	params, err := parse{{.ParamsName}}(r)
 	if err != nil {
 		Error(w, err, http.StatusBadRequest)
@@ -98,7 +101,7 @@ func (srv *{{.Api}}) Handler{{.Name}}(w http.ResponseWriter, r *http.Request) {
 }
 `))
 
-	ParseParams = template.Must(template.New(`ParseParams`).Parse(`
+	paramsTmpl = template.Must(template.New(`ParseParams`).Parse(`
 func parse{{.ParamsName}}(r *http.Request) (*{{.ParamsName}}, error) {
 	err := r.ParseForm()
 	if err != nil {
@@ -166,17 +169,10 @@ type apiMethod struct {
 	Api        string
 	ParamsName string
 	Params     []param
+	Url        string `json:"url"`
 	Method     string `json:"method"`
 	Auth       bool   `json:"auth"`
-	Url        string `json:"url"`
 }
-
-type typeName int
-
-const (
-	stringType = iota
-	intType
-)
 
 type param struct {
 	Name       string
@@ -202,8 +198,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer out.Close()
 
-	err = headTmpl.Execute(out, struct {
+	err = commonTmpl.Execute(out, struct {
 		Package string
 	}{
 		Package: node.Name.Name,
@@ -214,7 +211,7 @@ func main() {
 
 	apis := extractApis(node)
 	for apiName, methods := range apis {
-		err = ServeHTTPTmpl.Execute(out, struct {
+		err = serveHTTPTmpl.Execute(out, struct {
 			ApiName string
 			Methods []apiMethod
 		}{
@@ -226,12 +223,12 @@ func main() {
 		}
 
 		for _, method := range methods {
-			err = Handler.Execute(out, method)
+			err = handlerTmpl.Execute(out, method)
 			if err != nil {
 				log.Println(err)
 			}
 
-			err = ParseParams.Execute(out, method)
+			err = paramsTmpl.Execute(out, method)
 			if err != nil {
 				log.Println(err)
 			}
@@ -356,17 +353,6 @@ func extractParams(fields *ast.FieldList) []param {
 				param.ParamName = val
 			case "enum":
 				param.Enum = strings.Split(val, "|")
-			case "default":
-				param.DefaultVal = val
-				//switch param.TypeName {
-				//case "string":
-				//case "int":
-				//	intVal, err := strconv.Atoi(val)
-				//	if err != nil {
-				//		log.Println(err)
-				//	}
-				//	param.DefaultVal = intVal
-				//}
 			case "min":
 				param.Min = true
 				min, err := strconv.Atoi(val)
@@ -383,6 +369,8 @@ func extractParams(fields *ast.FieldList) []param {
 					continue
 				}
 				param.MaxVal = max
+			case "default":
+				param.DefaultVal = val
 			}
 		}
 		params = append(params, param)
