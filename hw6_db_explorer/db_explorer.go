@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"path"
 )
@@ -10,16 +11,24 @@ import (
 // тут вы пишете код
 // обращаю ваше внимание - в этом задании запрещены глобальные переменные
 
+type pathResolver struct {
+	handlers map[string]http.HandlerFunc
+}
+
+type cr struct {
+	Response map[string]interface{} `json:"response"`
+	Tables   []string               `json:"tables"`
+}
+
 func NewDbExplorer(db *sql.DB) (handler *pathResolver, err error) {
+	fooGetTables := func(w http.ResponseWriter, r *http.Request) {
+		getTables(w, r, db)
+	}
 	pr := newPathResolver()
 	//pr.Add("GET /hello", hello)
 	//pr.Add("* /goodbye/*", goobye)
-	pr.Add("GET /", getTables)
+	pr.Add("GET /", fooGetTables)
 	return pr, nil
-}
-
-type pathResolver struct {
-	handlers map[string]http.HandlerFunc
 }
 
 func newPathResolver() *pathResolver {
@@ -40,11 +49,26 @@ func (p *pathResolver) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			fmt.Fprint(res, req)
 		}
 	}
-	//fmt.Fprint(res, "qqq")
 	http.NotFound(res, req)
 }
 
-func getTables(w http.ResponseWriter, r *http.Request) {
+func getTables(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	rows, err := db.Query("SHOW TABLES;")
+	if err != nil {
+		log.Fatal("can't show tables", err)
+	}
+	tables := make([]string, 0)
+	for rows.Next() {
+		table := ""
+		err = rows.Scan(&table)
+		if err != nil {
+			log.Fatal("can't scan rows", err)
+		}
+		tables = append(tables, table)
+	}
+	fmt.Println(tables)
+	w.Write([]byte("qqq"))
 
-	fmt.Fprint(w, "Z")
+	// надо закрывать соединение, иначе будет течь
+	rows.Close()
 }
