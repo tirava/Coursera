@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,10 +16,7 @@ type pathResolver struct {
 	handlers map[string]http.HandlerFunc
 }
 
-type cr struct {
-	Response map[string]interface{} `json:"response"`
-	Tables   []string               `json:"tables"`
-}
+type crTables map[string]map[string][]string
 
 func NewDbExplorer(db *sql.DB) (handler *pathResolver, err error) {
 	fooGetTables := func(w http.ResponseWriter, r *http.Request) {
@@ -55,19 +53,31 @@ func (p *pathResolver) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 func getTables(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	rows, err := db.Query("SHOW TABLES;")
 	if err != nil {
-		log.Fatal("can't show tables", err)
+		//log.Fatal("can't show tables", err)
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 	tables := make([]string, 0)
+	table := ""
 	for rows.Next() {
-		table := ""
+		//err = rows.Scan(&table)
 		err = rows.Scan(&table)
 		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
 			log.Fatal("can't scan rows", err)
 		}
 		tables = append(tables, table)
 	}
-	fmt.Println(tables)
-	w.Write([]byte("qqq"))
+
+	result := crTables{}
+	result["response"] = map[string][]string{}
+	result["response"]["tables"] = tables
+
+	jsonTables, err := json.Marshal(result)
+	if err != nil {
+		//log.Fatal("can't marshal tables", err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	w.Write([]byte(jsonTables))
 
 	// надо закрывать соединение, иначе будет течь
 	rows.Close()

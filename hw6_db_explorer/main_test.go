@@ -95,7 +95,7 @@ func TestApis(t *testing.T) {
 	PrepareTestApis(db)
 
 	// возможно вам будет удобно закомментировать это чтобы смотреть результат после теста
-	defer CleanupTestApis(db)
+	//defer CleanupTestApis(db)
 
 	handler, err := NewDbExplorer(db)
 	if err != nil {
@@ -561,7 +561,8 @@ func runCases(t *testing.T, ts *httptest.Server, db *sql.DB, cases []Case) {
 		json.Unmarshal(data, &expected)
 
 		if !reflect.DeepEqual(result, expected) {
-			t.Fatalf("[%s] results not match\nGot : %#v\nWant: %#v", caseName, result, expected)
+			//t.Fatalf("[%s] results not match\nGot : %#v\nWant: %#v", caseName, result, expected)
+			t.Fatalf("[%s] results not match\nGot : %s\nWant: %s", caseName, result, expected)
 			continue
 		}
 	}
