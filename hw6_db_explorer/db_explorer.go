@@ -136,5 +136,12 @@ func getTable(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		w.Write([]byte(jsonResult))
 		return
 	}
-
+	// return table content
+	rows, err = db.Query("SELECT * FROM items")
+	for rows.Next() {
+		post := &Item{}
+		err = rows.Scan(&post.Id, &post.Title, &post.Updated)
+		__err_panic(err)
+		items = append(items, post)
+	}
 }
