@@ -1,13 +1,13 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"regexp"
+	"strconv"
+	"strings"
 )
 
 // тут вы пишете код
@@ -16,7 +16,7 @@ import (
 type DBExplorer struct {
 	db     *sql.DB
 	tables map[string]*Table
-	path   *regexp.Regexp
+	//path   *regexp.Regexp
 }
 
 type Table struct {
@@ -28,9 +28,9 @@ type Column struct {
 	fieldName string
 	typeName  string
 	isNull    bool
-	//key        string
-	//defaultVal *string
-	//extra      string
+	keyType   string
+	defField  *string
+	extra     string
 }
 
 type Response struct {
@@ -44,17 +44,17 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 	dbe := DBExplorer{
 		db:     db,
 		tables: make(map[string]*Table),
-		path:   regexp.MustCompile("/?(\\w+)?(?:/(\\d+))?"),
 	}
-	qTables, err := dbe.db.Query("SHOW TABLES")
+	showTables, err := dbe.db.Query("SHOW TABLES")
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer showTables.Close()
 
 	tables := make([]*Table, 0)
 	table := ""
-	for qTables.Next() {
-		err = qTables.Scan(&table)
+	for showTables.Next() {
+		err = showTables.Scan(&table)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -69,10 +69,8 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 
 		for cols.Next() {
 			col := &Column{}
-			var isNull string
-			err = cols.Scan(&col.fieldName, &col.typeName, &isNull)//&col.key,
-			//&col.defaultVal,
-			//&col.extra,
+			isNull := ""
+			err = cols.Scan(&col.fieldName, &col.typeName, &isNull, &col.keyType, &col.defField, &col.extra)
 
 			if isNull == "YES" {
 				col.isNull = true
@@ -80,29 +78,41 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 			table.columns = append(table.columns, col)
 		}
 		dbe.tables[table.name] = table
+		cols.Close()
 	}
+
 	return dbe, nil
 }
 
 func (dbe DBExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	pathParsed := dbe.path.FindStringSubmatch(r.URL.Path)
-	tableName, tableID := pathParsed[1], pathParsed[2]
 
-	if tableName != "" {
-		_, ok := dbe.tables[tableName]
+	parts := strings.Split(r.URL.Path, "/")
+	name, id := "", ""
+	if len(parts) > 1 {
+		name = parts[1]
+	}
+	if len(parts) > 2 {
+		id = parts[2]
+	}
+
+	if name != "" {
+		_, ok := dbe.tables[name]
 		if !ok {
 			writeJSON(w, http.StatusNotFound, "", nil, "unknown table")
 			return
 		}
 	}
 
-	ctx := context.WithValue(context.Background(), "tableName", tableName)
-	ctx = context.WithValue(ctx, "tableID", tableID)
-
 	switch r.Method {
 	case "GET":
-		if tableName == "" && tableID == "" {
+		if name == "" && id == "" {
 			dbe.getTables(w, r)
+		} else if name != "" && id == "" {
+			dbe.getSelect(w, r, name)
+			//} else if name != "" && id != "" {
+			//dbe.selectByID(ctx, w, r)
+			//} else {
+			//	w.WriteHeader(http.StatusNotImplemented)
 		}
 
 	default:
@@ -138,6 +148,7 @@ func (dbe *DBExplorer) getTables(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
 		return
 	}
+	defer rows.Close()
 
 	tables := make([]string, 0)
 	table := ""
@@ -150,4 +161,76 @@ func (dbe *DBExplorer) getTables(w http.ResponseWriter, r *http.Request) {
 		tables = append(tables, table)
 	}
 	writeJSON(w, http.StatusOK, "tables", tables, "")
+}
+
+func (dbe *DBExplorer) getSelect(w http.ResponseWriter, r *http.Request, table string) {
+
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil {
+		offset = 0
+	}
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		limit = 5
+	}
+
+	query := fmt.Sprintf(`SELECT * FROM %s LIMIT %d OFFSET %d`, table, limit, offset)
+	respAll, err := dbe.execQuery(table, query)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, "records", respAll, "")
+}
+
+func (dbe *DBExplorer) getColumns(table string) []string {
+	tabNames, _ := dbe.tables[table]
+	colNames := make([]string, 0)
+	for _, col := range tabNames.columns {
+		colNames = append(colNames, col.fieldName)
+	}
+	return colNames
+}
+
+func (dbe *DBExplorer) execQuery(table string, query string) ([]crDBE, error) {
+	rows, err := dbe.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	dest := make([]interface{}, 0)
+
+	colNames := dbe.getColumns(table)
+	colTypes, _ := rows.ColumnTypes()
+	for _, item := range colTypes {
+		switch item.DatabaseTypeName() {
+		case "INT":
+			dest = append(dest, new(int))
+		case "VARCHAR", "TEXT":
+			dest = append(dest, new(sql.NullString))
+		default:
+		}
+	}
+	resp := make([]crDBE, 0)
+	for rows.Next() {
+		rows.Scan(dest...)
+		row := make(crDBE, 0)
+		for i, item := range dest {
+			switch v := item.(type) {
+			case *int:
+				row[colNames[i]] = *v
+			case *sql.NullString:
+				if v.Valid {
+					row[colNames[i]] = v.String
+				} else {
+					row[colNames[i]] = nil
+				}
+			}
+		}
+		resp = append(resp, row)
+	}
+
+	return resp, nil
 }
