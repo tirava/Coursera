@@ -1,147 +1,153 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
-	"path"
-	"strings"
+	"regexp"
 )
 
 // тут вы пишете код
 // обращаю ваше внимание - в этом задании запрещены глобальные переменные
 
-type pathResolver struct {
-	handlers map[string]http.HandlerFunc
+type DBExplorer struct {
+	db     *sql.DB
+	tables map[string]*Table
+	path   *regexp.Regexp
 }
 
-type cr map[string]interface{}
+type Table struct {
+	name    string
+	columns []*Column
+}
 
-type crTables map[string]map[string][]string
+type Column struct {
+	fieldName string
+	typeName  string
+	isNull    bool
+	//key        string
+	//defaultVal *string
+	//extra      string
+}
 
-func NewDbExplorer(db *sql.DB) (handler *pathResolver, err error) {
-	fooGetTables := func(w http.ResponseWriter, r *http.Request) {
-		getTables(w, r, db)
+type Response struct {
+	Response crDBE  `json:"response,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+type crDBE map[string]interface{}
+
+func NewDbExplorer(db *sql.DB) (http.Handler, error) {
+	dbe := DBExplorer{
+		db:     db,
+		tables: make(map[string]*Table),
+		path:   regexp.MustCompile("/?(\\w+)?(?:/(\\d+))?"),
 	}
-	fooGetTable := func(w http.ResponseWriter, r *http.Request) {
-		getTable(w, r, db)
+	qTables, err := dbe.db.Query("SHOW TABLES")
+	if err != nil {
+		log.Fatal(err)
 	}
-	pr := newPathResolver()
-	//pr.Add("* /goodbye/*", goobye)
-	pr.Add("GET /", fooGetTables)
-	pr.Add("GET /*", fooGetTable)
-	return pr, nil
+
+	tables := make([]*Table, 0)
+	table := ""
+	for qTables.Next() {
+		err = qTables.Scan(&table)
+		if err != nil {
+			log.Fatal(err)
+		}
+		tables = append(tables, &Table{name: table})
+	}
+
+	for _, table := range tables {
+		cols, err := dbe.db.Query(fmt.Sprintf("SHOW COLUMNS FROM `%s`", table.name))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for cols.Next() {
+			col := &Column{}
+			var isNull string
+			err = cols.Scan(&col.fieldName, &col.typeName, &isNull)//&col.key,
+			//&col.defaultVal,
+			//&col.extra,
+
+			if isNull == "YES" {
+				col.isNull = true
+			}
+			table.columns = append(table.columns, col)
+		}
+		dbe.tables[table.name] = table
+	}
+	return dbe, nil
 }
 
-func newPathResolver() *pathResolver {
-	return &pathResolver{make(map[string]http.HandlerFunc)}
-}
+func (dbe DBExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	pathParsed := dbe.path.FindStringSubmatch(r.URL.Path)
+	tableName, tableID := pathParsed[1], pathParsed[2]
 
-func (p *pathResolver) Add(path string, handler http.HandlerFunc) {
-	p.handlers[path] = handler
-}
-
-func (p *pathResolver) ServeHTTP(res http.ResponseWriter, req *http.Request) {
-	check := req.Method + " " + req.URL.Path
-	for pattern, handlerFunc := range p.handlers {
-		if ok, err := path.Match(pattern, check); ok && err == nil {
-			handlerFunc(res, req)
+	if tableName != "" {
+		_, ok := dbe.tables[tableName]
+		if !ok {
+			writeJSON(w, http.StatusNotFound, "", nil, "unknown table")
 			return
-		} else if err != nil {
-			fmt.Fprint(res, req)
 		}
 	}
-	http.NotFound(res, req)
+
+	ctx := context.WithValue(context.Background(), "tableName", tableName)
+	ctx = context.WithValue(ctx, "tableID", tableID)
+
+	switch r.Method {
+	case "GET":
+		if tableName == "" && tableID == "" {
+			dbe.getTables(w, r)
+		}
+
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 }
 
-func getTables(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	rows, err := db.Query("SHOW TABLES;")
+func writeJSON(w http.ResponseWriter, respStatus int, respName string, respData interface{}, error string) {
+	resp := Response{}
+	if error != "" {
+		resp = Response{
+			Error: error,
+		}
+	} else {
+		resp = Response{
+			Response: crDBE{respName: respData},
+		}
+	}
+
+	respJSON, err := json.Marshal(resp)
 	if err != nil {
-		//log.Fatal("can't show tables", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	// надо закрывать соединение, иначе будет течь
-	defer rows.Close()
+	w.WriteHeader(respStatus)
+	w.Write(respJSON)
+}
 
-	tables, err := listTables(rows)
+func (dbe *DBExplorer) getTables(w http.ResponseWriter, r *http.Request) {
+	rows, err := dbe.db.Query("SHOW TABLES")
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		//log.Fatal("can't scan rows", err)
+		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
 		return
 	}
 
-	result := crTables{}
-	result["response"] = map[string][]string{}
-	result["response"]["tables"] = tables
-
-	jsonTables, err := json.Marshal(result)
-	if err != nil {
-		//log.Fatal("can't marshal tables", err)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
-	w.Write([]byte(jsonTables))
-}
-
-func listTables(rows *sql.Rows) (tables []string, err error) {
-	//tables := make([]string, 0)
+	tables := make([]string, 0)
 	table := ""
 	for rows.Next() {
-		//err = rows.Scan(&table)
-		err := rows.Scan(&table)
+		err = rows.Scan(&table)
 		if err != nil {
-			return nil, err
-			//log.Fatal("can't scan rows", err)
+			writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
+			return
 		}
 		tables = append(tables, table)
 	}
-	return tables, nil
-}
-
-func getTable(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-	rows, err := db.Query("SHOW TABLES;")
-	if err != nil {
-		//log.Fatal("can't show tables", err)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
-	// надо закрывать соединение, иначе будет течь
-	defer rows.Close()
-
-	tables, err := listTables(rows)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		//log.Fatal("can't scan rows", err)
-	}
-
-	path := r.URL.Path
-	parts := strings.Split(path, "/")
-	name := parts[1]
-
-	found := false
-	for _, table := range tables {
-		if table == name {
-			found = true
-			break
-		}
-	}
-	if !found {
-		w.WriteHeader(http.StatusNotFound)
-		result := &cr{"error": "unknown table"}
-		jsonResult, err := json.Marshal(result)
-		if err != nil {
-			//log.Fatal("can't marshal tables", err)
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-		w.Write([]byte(jsonResult))
-		return
-	}
-	// return table content
-	rows, err = db.Query("SELECT * FROM items")
-	for rows.Next() {
-		post := &Item{}
-		err = rows.Scan(&post.Id, &post.Title, &post.Updated)
-		__err_panic(err)
-		items = append(items, post)
-	}
+	writeJSON(w, http.StatusOK, "tables", tables, "")
 }
