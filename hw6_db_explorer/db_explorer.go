@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -115,6 +116,10 @@ func (dbe DBExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "PUT":
 		if name != "" && id == "" {
 			dbe.insRecord(w, r, name)
+		}
+	case "POST":
+		if name != "" && id != "" {
+			dbe.updRecord(w, r, name, id)
 		}
 	default:
 		w.WriteHeader(http.StatusBadRequest)
@@ -293,6 +298,77 @@ func (dbe *DBExplorer) insertData(table string, data crDBE) (int64, error) {
 		return 0, err
 	}
 	return result.LastInsertId()
+}
+
+func (dbe *DBExplorer) updRecord(w http.ResponseWriter, r *http.Request, table, ids string) {
+	id, _ := strconv.Atoi(ids)
+
+	data := make(crDBE)
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
+		return
+	}
+
+	err = dbe.checkData(table, data)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, "", nil, err.Error())
+		return
+	}
+
+	rowsAffected, err := dbe.updateData(table, id, data)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, "updated", rowsAffected, "")
+}
+
+func (dbe *DBExplorer) updateData(table string, id int, data crDBE) (int64, error) {
+	columns := dbe.tables[table].columns
+
+	ps := make([]string, 0)
+	vals := make([]interface{}, 0)
+
+	for i, val := range data {
+		vals = append(vals, val)
+		ps = append(ps, fmt.Sprintf("%v = ?", i))
+	}
+
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s = %d", table, strings.Join(ps, ", "), columns[0].fieldName, id)
+	result, err := dbe.db.Exec(query, vals...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (dbe *DBExplorer) checkData(table string, data crDBE) error {
+	tab := dbe.tables[table]
+	for _, column := range tab.columns {
+		val, ok := data[column.fieldName]
+		if !ok {
+			continue
+		}
+		if val == nil {
+			if column.isNull {
+				continue
+			}
+			return fmt.Errorf("field %s have invalid type", column.fieldName)
+		}
+
+		switch reflect.TypeOf(val).Name() {
+		case "string":
+			switch column.typeName {
+			case "varchar(255)", "text":
+				continue
+			}
+
+		}
+		return fmt.Errorf("field %s have invalid type", column.fieldName)
+	}
+	return nil
 }
 
 //sql injects!!!!!!!!!!!!!!
