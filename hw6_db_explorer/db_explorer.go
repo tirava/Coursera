@@ -121,6 +121,10 @@ func (dbe DBExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if name != "" && id != "" {
 			dbe.updRecord(w, r, name, id)
 		}
+	case "DELETE":
+		if name != "" && id != "" {
+			dbe.delRecord(w, r, name, id)
+		}
 	default:
 		w.WriteHeader(http.StatusBadRequest)
 	}
@@ -357,18 +361,43 @@ func (dbe *DBExplorer) checkData(table string, data crDBE) error {
 			}
 			return fmt.Errorf("field %s have invalid type", column.fieldName)
 		}
-
 		switch reflect.TypeOf(val).Name() {
 		case "string":
 			switch column.typeName {
 			case "varchar(255)", "text":
 				continue
 			}
-
 		}
 		return fmt.Errorf("field %s have invalid type", column.fieldName)
 	}
 	return nil
+}
+
+func (dbe *DBExplorer) delRecord(w http.ResponseWriter, r *http.Request, table, ids string) {
+	id, _ := strconv.Atoi(ids)
+
+	rowsAffected, err := dbe.deleteData(table, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, "deleted", rowsAffected, "")
+}
+
+func (dbe *DBExplorer) deleteData(table string, id int) (int64, error) {
+	tab := dbe.tables[table]
+
+	query := fmt.Sprintf(
+		"DELETE FROM %s WHERE %s = ?",
+		tab.name,
+		tab.columns[0].fieldName,
+	)
+	result, err := dbe.db.Exec(query, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 //sql injects!!!!!!!!!!!!!!
