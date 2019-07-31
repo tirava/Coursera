@@ -109,15 +109,11 @@ func (dbe DBExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			dbe.getTables(w, r)
 		} else if name != "" && id == "" {
 			dbe.getSelect(w, r, name)
-			//} else if name != "" && id != "" {
-			//dbe.selectByID(ctx, w, r)
-			//} else {
-			//	w.WriteHeader(http.StatusNotImplemented)
+		} else if name != "" && id != "" {
+			dbe.getSelectID(w, r, name, id)
 		}
-
 	default:
 		w.WriteHeader(http.StatusBadRequest)
-		return
 	}
 }
 
@@ -203,6 +199,7 @@ func (dbe *DBExplorer) execQuery(table string, query string) ([]crDBE, error) {
 	dest := make([]interface{}, 0)
 
 	colNames := dbe.getColumns(table)
+
 	colTypes, _ := rows.ColumnTypes()
 	for _, item := range colTypes {
 		switch item.DatabaseTypeName() {
@@ -234,3 +231,22 @@ func (dbe *DBExplorer) execQuery(table string, query string) ([]crDBE, error) {
 
 	return resp, nil
 }
+
+func (dbe *DBExplorer) getSelectID(w http.ResponseWriter, r *http.Request, table, ids string) {
+	id, _ := strconv.Atoi(ids)
+	colNames := dbe.getColumns(table)
+
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE %s = %d`, strings.Join(colNames, ", "), table, colNames[0], id)
+	respId, err := dbe.execQuery(table, query)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
+		return
+	}
+	if len(respId) == 0 {
+		writeJSON(w, http.StatusNotFound, "", nil, "record not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, "record", respId[0], "")
+}
+
+//sql injects!!!!!!!!!!!!!!
