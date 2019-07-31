@@ -112,6 +112,10 @@ func (dbe DBExplorer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else if name != "" && id != "" {
 			dbe.getSelectID(w, r, name, id)
 		}
+	case "PUT":
+		if name != "" && id == "" {
+			dbe.insRecord(w, r, name)
+		}
 	default:
 		w.WriteHeader(http.StatusBadRequest)
 	}
@@ -247,6 +251,48 @@ func (dbe *DBExplorer) getSelectID(w http.ResponseWriter, r *http.Request, table
 		return
 	}
 	writeJSON(w, http.StatusOK, "record", respId[0], "")
+}
+
+func (dbe *DBExplorer) insRecord(w http.ResponseWriter, r *http.Request, table string) {
+	tab := dbe.tables[table]
+
+	data := make(crDBE)
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
+		return
+	}
+
+	id, err := dbe.insertData(table, data)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, "", nil, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tab.columns[0].fieldName, id, "")
+}
+
+func (dbe *DBExplorer) insertData(table string, data crDBE) (int64, error) {
+	columns := dbe.tables[table].columns
+
+	vals := make([]interface{}, 0)
+	for i := 1; i < len(columns); i++ {
+		val, ok := data[columns[i].fieldName]
+		if !ok {
+			if columns[i].isNull {
+				val = nil
+			} else {
+				val = ""
+			}
+		}
+		vals = append(vals, val)
+	}
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, strings.Join(dbe.getColumns(table)[1:], ", "), "?"+strings.Repeat(", ?", len(vals)-1))
+	result, err := dbe.db.Exec(query, vals...)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
 }
 
 //sql injects!!!!!!!!!!!!!!
