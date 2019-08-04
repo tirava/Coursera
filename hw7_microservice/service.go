@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"time"
 )
 
 // тут вы пишете код
@@ -24,8 +25,10 @@ type adminServer struct {
 	newLogChan chan chan *Event
 	listenLogs []chan *Event
 	//
-	//addStatListenerCh chan chan *Stat
-	//statListeners     []chan *Stat
+	//addStatListenerCh chan chan *Stat newStatChan
+	newStatChan chan chan *Stat
+	//statListeners     []chan *Stat listenStats
+	listenStats []chan *Stat
 }
 
 type server struct {
@@ -87,6 +90,24 @@ func StartMyMicroservice(ctx context.Context, listenAddr, ACLData string) (err e
 		}
 	}()
 
+	server.statChan = make(chan *Stat, 0)
+	server.newStatChan = make(chan chan *Stat, 0)
+
+	go func() {
+		for {
+			select {
+			case ch := <-server.newStatChan:
+				server.listenStats = append(server.listenStats, ch)
+			case stat := <-server.statChan:
+				for _, ch := range server.listenStats {
+					ch <- stat
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	return nil
 }
 
@@ -111,10 +132,11 @@ func (s *server) unaryInterceptor(ctx context.Context, req interface{}, info *gr
 		Method:   info.FullMethod,
 		Host:     "127.0.0.1:8083",
 	}
-	//s.statChan <- &Stat{
-	//	ByConsumer: map[string]uint64{consumer[0]: 1},
-	//	ByMethod:   map[string]uint64{info.FullMethod: 1},
-	//}
+
+	s.statChan <- &Stat{
+		ByConsumer: map[string]uint64{consumer[0]: 1},
+		ByMethod:   map[string]uint64{info.FullMethod: 1},
+	}
 
 	return handler(ctx, req)
 }
@@ -140,17 +162,14 @@ func (s *server) streamInterceptor(srv interface{}, ss grpc.ServerStream, info *
 		Method:   info.FullMethod,
 		Host:     "127.0.0.1:8083",
 	}
-	//s.statChan <- &Stat{
-	//	ByConsumer: map[string]uint64{consumer[0]: 1},
-	//	ByMethod:   map[string]uint64{info.FullMethod: 1},
-	//}
+
+	s.statChan <- &Stat{
+		ByConsumer: map[string]uint64{consumer[0]: 1},
+		ByMethod:   map[string]uint64{info.FullMethod: 1},
+	}
 
 	return handler(srv, ss)
 }
-
-//func (s *server) getMetaData (ctx context.Context) consumerToDo  {
-//
-//}
 
 func (s *adminServer) Logging(nothing *Nothing, logServer Admin_LoggingServer) error {
 
@@ -167,9 +186,39 @@ func (s *adminServer) Logging(nothing *Nothing, logServer Admin_LoggingServer) e
 	}
 }
 
-func (s *adminServer) Statistics(interval *StatInterval, srv Admin_StatisticsServer) error {
+func (s *adminServer) Statistics(interval *StatInterval, statServer Admin_StatisticsServer) error {
 
-	return nil
+	ch := make(chan *Stat, 0)
+	s.newStatChan <- ch
+
+	tick := time.NewTicker(time.Second * time.Duration(interval.IntervalSeconds))
+
+	sum := &Stat{
+		ByMethod:   make(map[string]uint64),
+		ByConsumer: make(map[string]uint64),
+	}
+
+	for {
+		select {
+		case stat := <-ch:
+			for key, val := range stat.ByMethod {
+				sum.ByMethod[key] += val
+			}
+			for key, val := range stat.ByConsumer {
+				sum.ByConsumer[key] += val
+			}
+
+		case <-tick.C:
+			statServer.Send(sum)
+			sum = &Stat{
+				ByMethod:   make(map[string]uint64),
+				ByConsumer: make(map[string]uint64),
+			}
+
+		case <-s.ctx.Done():
+			return nil
+		}
+	}
 }
 
 func (bs *bizServer) Check(ctx context.Context, n *Nothing) (*Nothing, error) {
