@@ -18,11 +18,11 @@ import (
 type bizServer struct{}
 
 type adminServer struct {
-	ctx      context.Context
-	logChan  chan *Event
-	statChan chan *Stat
-	//addLogListenerCh chan chan *Event
-	//logListeners     []chan *Event
+	ctx        context.Context
+	logChan    chan *Event
+	statChan   chan *Stat
+	newLogChan chan chan *Event
+	listenLogs []chan *Event
 	//
 	//addStatListenerCh chan chan *Stat
 	//statListeners     []chan *Stat
@@ -36,13 +36,12 @@ type server struct {
 
 func StartMyMicroservice(ctx context.Context, listenAddr, ACLData string) (err error) {
 
-	acl := make(map[string][]string)
-	if err = json.Unmarshal([]byte(ACLData), &acl); err != nil {
-		return
-	}
-
 	server := &server{}
 	server.ctx = ctx
+
+	if err = json.Unmarshal([]byte(ACLData), &server.acl); err != nil {
+		return
+	}
 
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -70,6 +69,24 @@ func StartMyMicroservice(ctx context.Context, listenAddr, ACLData string) (err e
 		grpcServer.GracefulStop()
 	}()
 
+	server.logChan = make(chan *Event, 0)
+	server.newLogChan = make(chan chan *Event, 0)
+
+	go func() {
+		for {
+			select {
+			case ch := <-server.newLogChan:
+				server.listenLogs = append(server.listenLogs, ch)
+			case event := <-server.logChan:
+				for _, ch := range server.listenLogs {
+					ch <- event
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	return nil
 }
 
@@ -89,11 +106,11 @@ func (s *server) unaryInterceptor(ctx context.Context, req interface{}, info *gr
 		return "", status.Errorf(codes.Unauthenticated, "can't get consumer from metadata")
 	}
 
-	//s.logChan <- &Event{
-	//	Consumer: consumer[0],
-	//	Method:   info.FullMethod,
-	//	Host:     "127.0.0.1:8083",
-	//}
+	s.logChan <- &Event{
+		Consumer: consumer[0],
+		Method:   info.FullMethod,
+		Host:     "127.0.0.1:8083",
+	}
 	//s.statChan <- &Stat{
 	//	ByConsumer: map[string]uint64{consumer[0]: 1},
 	//	ByMethod:   map[string]uint64{info.FullMethod: 1},
@@ -118,11 +135,11 @@ func (s *server) streamInterceptor(srv interface{}, ss grpc.ServerStream, info *
 		return status.Errorf(codes.Unauthenticated, "can't get consumer from metadata")
 	}
 
-	//s.logChan <- &Event{
-	//	Consumer: consumer[0],
-	//	Method:   info.FullMethod,
-	//	Host:     "127.0.0.1:8083",
-	//}
+	s.logChan <- &Event{
+		Consumer: consumer[0],
+		Method:   info.FullMethod,
+		Host:     "127.0.0.1:8083",
+	}
 	//s.statChan <- &Stat{
 	//	ByConsumer: map[string]uint64{consumer[0]: 1},
 	//	ByMethod:   map[string]uint64{info.FullMethod: 1},
@@ -135,9 +152,19 @@ func (s *server) streamInterceptor(srv interface{}, ss grpc.ServerStream, info *
 //
 //}
 
-func (s *adminServer) Logging(nothing *Nothing, srv Admin_LoggingServer) error {
+func (s *adminServer) Logging(nothing *Nothing, logServer Admin_LoggingServer) error {
 
-	return nil
+	ch := make(chan *Event, 0)
+	s.newLogChan <- ch
+
+	for {
+		select {
+		case event := <-ch:
+			logServer.Send(event)
+		case <-s.ctx.Done():
+			return nil
+		}
+	}
 }
 
 func (s *adminServer) Statistics(interval *StatInterval, srv Admin_StatisticsServer) error {
@@ -170,34 +197,34 @@ func (s *server) checkAuth(ctx context.Context, fullMethod string) error {
 
 	allowed, ok := s.acl[consumer[0]]
 	if !ok {
-		return status.Errorf(codes.Unauthenticated, "can't allow to enter")
+		return status.Errorf(codes.Unauthenticated, "can't allow to enter 1")
 	}
 
 	methods := strings.Split(fullMethod, "/")
 	if len(methods) != 3 {
-		return status.Errorf(codes.Unauthenticated, "can't allow to enter")
+		return status.Errorf(codes.Unauthenticated, "can't allow to enter 2")
 	}
 
 	path, method := methods[1], methods[2]
 	isAuthed := false
 
-	for _, al := range allowed {
-		splitted := strings.Split(al, "/")
-		if len(splitted) != 3 {
+	for _, allow := range allowed {
+		s := strings.Split(allow, "/")
+		if len(s) != 3 {
 			continue
 		}
-		allowedPath, allowedMethod := splitted[1], splitted[2]
-		if path != allowedPath {
+		pathAllow, methodAllow := s[1], s[2]
+		if path != pathAllow {
 			continue
 		}
-		if allowedMethod == "*" || method == allowedMethod {
+		if methodAllow == "*" || method == methodAllow {
 			isAuthed = true
 			break
 		}
 	}
 
 	if !isAuthed {
-		return status.Errorf(codes.Unauthenticated, "can't allow to enter")
+		return status.Errorf(codes.Unauthenticated, "can't allow to enter 3")
 	}
 
 	return nil
