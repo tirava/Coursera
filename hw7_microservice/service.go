@@ -115,30 +115,9 @@ func (s *server) unaryInterceptor(ctx context.Context, req interface{}, info *gr
 		return "", err
 	}
 
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", status.Errorf(codes.Unauthenticated, "can't get metadata from incoming context")
-	}
-
-	consumer := md.Get("consumer")
-	if len(consumer) != 1 {
-		return "", status.Errorf(codes.Unauthenticated, "can't get consumer from metadata")
-	}
-
-	authority := md.Get(":authority")
-	if len(authority) != 1 {
-		return "", errors.New("can't get client host from metadata")
-	}
-
-	s.logChan <- &Event{
-		Consumer: consumer[0],
-		Method:   info.FullMethod,
-		Host:     authority[0] + ":",
-	}
-
-	s.statChan <- &Stat{
-		ByConsumer: map[string]uint64{consumer[0]: 1},
-		ByMethod:   map[string]uint64{info.FullMethod: 1},
+	err := s.parseMetadata(ctx, nil, info)
+	if err != nil {
+		return "", err
 	}
 
 	return handler(ctx, req)
@@ -150,7 +129,16 @@ func (s *server) streamInterceptor(srv interface{}, ss grpc.ServerStream, info *
 		return err
 	}
 
-	md, ok := metadata.FromIncomingContext(ss.Context())
+	err := s.parseMetadata(ss.Context(), info, nil)
+	if err != nil {
+		return err
+	}
+
+	return handler(srv, ss)
+}
+
+func (s *server) parseMetadata(ctx context.Context, infoStream *grpc.StreamServerInfo, infoUnar *grpc.UnaryServerInfo) error {
+	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return status.Errorf(codes.Unauthenticated, "can't get metadata from incoming context")
 	}
@@ -165,18 +153,24 @@ func (s *server) streamInterceptor(srv interface{}, ss grpc.ServerStream, info *
 		return errors.New("can't get client host from metadata")
 	}
 
+	info := ""
+	if infoStream != nil {
+		info = infoStream.FullMethod
+	} else {
+		info = infoUnar.FullMethod
+	}
+
 	s.logChan <- &Event{
 		Consumer: consumer[0],
-		Method:   info.FullMethod,
+		Method:   info,
 		Host:     authority[0] + ":",
 	}
 
 	s.statChan <- &Stat{
 		ByConsumer: map[string]uint64{consumer[0]: 1},
-		ByMethod:   map[string]uint64{info.FullMethod: 1},
+		ByMethod:   map[string]uint64{info: 1},
 	}
-
-	return handler(srv, ss)
+	return nil
 }
 
 func (s *adminServer) Logging(nothing *Nothing, logServer Admin_LoggingServer) error {
