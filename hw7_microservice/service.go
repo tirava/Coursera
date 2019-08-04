@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -19,15 +20,12 @@ import (
 type bizServer struct{}
 
 type adminServer struct {
-	ctx        context.Context
-	logChan    chan *Event
-	statChan   chan *Stat
-	newLogChan chan chan *Event
-	listenLogs []chan *Event
-	//
-	//addStatListenerCh chan chan *Stat newStatChan
+	ctx         context.Context
+	logChan     chan *Event
+	statChan    chan *Stat
+	newLogChan  chan chan *Event
+	listenLogs  []chan *Event
 	newStatChan chan chan *Stat
-	//statListeners     []chan *Stat listenStats
 	listenStats []chan *Stat
 }
 
@@ -127,10 +125,15 @@ func (s *server) unaryInterceptor(ctx context.Context, req interface{}, info *gr
 		return "", status.Errorf(codes.Unauthenticated, "can't get consumer from metadata")
 	}
 
+	authority := md.Get(":authority")
+	if len(authority) != 1 {
+		return "", errors.New("can't get client host from metadata")
+	}
+
 	s.logChan <- &Event{
 		Consumer: consumer[0],
 		Method:   info.FullMethod,
-		Host:     "127.0.0.1:8083",
+		Host:     authority[0] + ":",
 	}
 
 	s.statChan <- &Stat{
@@ -157,10 +160,15 @@ func (s *server) streamInterceptor(srv interface{}, ss grpc.ServerStream, info *
 		return status.Errorf(codes.Unauthenticated, "can't get consumer from metadata")
 	}
 
+	authority := md.Get(":authority")
+	if len(authority) != 1 {
+		return errors.New("can't get client host from metadata")
+	}
+
 	s.logChan <- &Event{
 		Consumer: consumer[0],
 		Method:   info.FullMethod,
-		Host:     "127.0.0.1:8083",
+		Host:     authority[0] + ":",
 	}
 
 	s.statChan <- &Stat{
@@ -179,7 +187,10 @@ func (s *adminServer) Logging(nothing *Nothing, logServer Admin_LoggingServer) e
 	for {
 		select {
 		case event := <-ch:
-			logServer.Send(event)
+			err := logServer.Send(event)
+			if err != nil {
+				log.Println("error in send logs")
+			}
 		case <-s.ctx.Done():
 			return nil
 		}
@@ -209,7 +220,10 @@ func (s *adminServer) Statistics(interval *StatInterval, statServer Admin_Statis
 			}
 
 		case <-tick.C:
-			statServer.Send(sum)
+			err := statServer.Send(sum)
+			if err != nil {
+				log.Println("error in send logs")
+			}
 			sum = &Stat{
 				ByMethod:   make(map[string]uint64),
 				ByConsumer: make(map[string]uint64),
